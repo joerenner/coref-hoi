@@ -135,9 +135,16 @@ class CorefModel(nn.Module):
         candidate_starts, candidate_ends = candidate_starts[candidate_mask], candidate_ends[candidate_mask]  # [num valid candidates]
         num_candidates = candidate_starts.shape[0]
         """
-        num_candidates = mention_starts.shape[0]
         candidate_starts = mention_starts
         candidate_ends = mention_ends
+        sentence_indices = sentence_map  # [num tokens]
+        candidate_start_sent_idx = sentence_indices[candidate_starts]
+        candidate_end_sent_idx = sentence_indices[torch.min(candidate_ends, torch.tensor(num_words - 1, device=device))]
+        candidate_mask = (candidate_ends < num_words) & (candidate_start_sent_idx == candidate_end_sent_idx) & (candidate_ends - candidate_starts <= self.max_span_width)
+        candidate_starts, candidate_ends = candidate_starts[candidate_mask], candidate_ends[candidate_mask]  # [num valid candidates]
+        num_candidates = candidate_starts.shape[0]
+        if num_candidates == 0:
+            print("WARNING: 0 candidates")
         # Get candidate labels
         if do_loss:
             same_start = (torch.unsqueeze(gold_starts, 1) == torch.unsqueeze(candidate_starts, 0))
