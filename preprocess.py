@@ -6,6 +6,7 @@ import collections
 import json
 import conll
 import util
+from spacy_mention_extraction.collect_markables_only_spacy import extract_token_chunks_as_markables
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
                     datefmt='%m/%d/%Y %H:%M:%S', level=logging.INFO)
@@ -64,6 +65,7 @@ class DocumentState(object):
         self.pronouns = []
         self.clusters = collections.defaultdict(list)  # {cluster_id: [(first_subtok_idx, last_subtok_idx) for each mention]}
         self.coref_stacks = collections.defaultdict(list)
+        self.mentions = []
 
     def finalize(self):
         """ Extract clusters; fill other info e.g. speakers, pronouns """
@@ -145,14 +147,16 @@ class DocumentState(object):
             "clusters": merged_clusters,
             'sentence_map': sentence_map,
             "subtoken_map": subtoken_map,
-            'pronouns': self.pronouns
+            'pronouns': self.pronouns,
+            "mentions": self.mentions
         }
 
 
-def split_into_segments(document_state: DocumentState, max_seg_len, constraints1, constraints2, tokenizer):
+def split_into_segments(document_state: DocumentState, max_seg_len, constraints1, constraints2, tokenizer, mentions):
     """ Split into segments.
         Add subtokens, subtoken_map, info for each segment; add CLS, SEP in the segment subtokens
         Input document_state: tokens, subtokens, token_end, sentence_end, utterance_end, subtoken_map, info
+        mentions: list of (start_word_idx, end_word_idx) tuples
     """
     curr_idx = 0  # Index for subtokens
     prev_token_idx = 0
@@ -181,12 +185,33 @@ def split_into_segments(document_state: DocumentState, max_seg_len, constraints1
         curr_idx = end_idx + 1
         prev_token_idx = subtoken_map[-1]
 
+    flattened_input_toks = util.flatten(document_state.segments)
+    flattened_subtok_map = util.flatten(document_state.segment_subtoken_map)
+    tok_to_subtokens = {}
+    for subtok_idx in range(len(flattened_subtok_map)):
+        if flattened_input_toks[subtok_idx] in {tokenizer.cls_token, tokenizer.sep_token}:
+            continue
+        if flattened_subtok_map[subtok_idx] not in tok_to_subtokens:
+            tok_to_subtokens[flattened_subtok_map[subtok_idx]] = [subtok_idx]
+        else:
+            tok_to_subtokens[flattened_subtok_map[subtok_idx]].append(subtok_idx)
+    for mention in mentions:
+        document_state.mentions.append((tok_to_subtokens[mention[0]][0], tok_to_subtokens[mention[1]][-1]))
+
 
 def get_document(doc_key, doc_lines, language, seg_len, tokenizer):
     """ Process raw input to finalized documents """
     document_state = DocumentState(doc_key)
     word_idx = -1
 
+    for line in doc_lines:
+        row = line.split()  # Columns for each token
+        if len(row) > 0:
+            row = line.split()  # Columns for each token
+            word = normalize_word(row[3], language)
+            document_state.tokens.append(word)
+
+    mentions = extract_token_chunks_as_markables(document_state.tokens)
     # Build up documents
     for line in doc_lines:
         row = line.split()  # Columns for each token
@@ -208,7 +233,7 @@ def get_document(doc_key, doc_lines, language, seg_len, tokenizer):
 
     # Split documents
     constraits1 = document_state.sentence_end if language != 'arabic' else document_state.token_end
-    split_into_segments(document_state, seg_len, constraits1, document_state.token_end, tokenizer)
+    split_into_segments(document_state, seg_len, constraits1, document_state.token_end, tokenizer, mentions)
     document = document_state.finalize()
     return document
 

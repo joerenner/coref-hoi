@@ -105,8 +105,9 @@ class CorefModel(nn.Module):
     def forward(self, *input):
         return self.get_predictions_and_loss(*input)
 
-    def get_predictions_and_loss(self, input_ids, input_mask, speaker_ids, sentence_len, genre, sentence_map,
-                                 is_training, gold_starts=None, gold_ends=None, gold_mention_cluster_map=None):
+    def get_predictions_and_loss(self, input_ids, input_mask, speaker_ids, mention_starts, mention_ends, sentence_len,
+                                 genre, sentence_map, is_training, gold_starts=None, gold_ends=None,
+                                 gold_mention_cluster_map=None):
         """ Model and input are already on the device """
         device = self.device
         conf = self.config
@@ -123,7 +124,7 @@ class CorefModel(nn.Module):
         mention_doc = mention_doc[input_mask]
         speaker_ids = speaker_ids[input_mask]
         num_words = mention_doc.shape[0]
-
+        """
         # Get candidate span
         sentence_indices = sentence_map  # [num tokens]
         candidate_starts = torch.unsqueeze(torch.arange(0, num_words, device=device), 1).repeat(1, self.max_span_width)
@@ -133,7 +134,10 @@ class CorefModel(nn.Module):
         candidate_mask = (candidate_ends < num_words) & (candidate_start_sent_idx == candidate_end_sent_idx)
         candidate_starts, candidate_ends = candidate_starts[candidate_mask], candidate_ends[candidate_mask]  # [num valid candidates]
         num_candidates = candidate_starts.shape[0]
-
+        """
+        num_candidates = mention_starts.shape[0]
+        candidate_starts = mention_starts
+        candidate_ends = mention_ends
         # Get candidate labels
         if do_loss:
             same_start = (torch.unsqueeze(gold_starts, 1) == torch.unsqueeze(candidate_starts, 0))

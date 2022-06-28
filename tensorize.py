@@ -43,18 +43,23 @@ class CorefDataProcessor:
             self.tensor_samples = {}
             tensorizer = Tensorizer(self.config, self.tokenizer)
             paths = {
-                'trn': join(self.data_dir, f'train.{self.language}.{self.max_seg_len}.jsonlines'),
-                'dev': join(self.data_dir, f'dev.{self.language}.{self.max_seg_len}.jsonlines'),
-                'tst': join(self.data_dir, f'test.{self.language}.{self.max_seg_len}.jsonlines')
+                'trn': [join(self.data_dir, f'train.{self.language}.{self.max_seg_len}.jsonlines'),
+                        join(self.data_dir, f"2022_SharedTask_train_{self.max_seg_len}.jsonl")],
+                'dev': [join(self.data_dir, f'dev.{self.language}.{self.max_seg_len}.jsonlines'),
+                        join(self.data_dir, f"2022_SharedTask_dev_{self.max_seg_len}.jsonl")],
+                'tst': [join(self.data_dir, f'test.{self.language}.{self.max_seg_len}.jsonlines'),
+                        join(self.data_dir, f"2022_SharedTask_test_{self.max_seg_len}.jsonl")],
             }
-            for split, path in paths.items():
-                logger.info('Tensorizing examples from %s; results will be cached)' % path)
-                is_training = (split == 'trn')
-                with open(path, 'r') as f:
-                    samples = [json.loads(line) for line in f.readlines()]
-                tensor_samples = [tensorizer.tensorize_example(sample, is_training) for sample in samples]
-                self.tensor_samples[split] = [(doc_key, self.convert_to_torch_tensor(*tensor)) for doc_key, tensor
-                                              in tensor_samples]
+            for split, split_paths in paths.items():
+                self.tensor_samples[split] = []
+                for path in split_paths:
+                    logger.info('Tensorizing examples from %s; results will be cached)' % path)
+                    is_training = (split == 'trn')
+                    with open(path, 'r') as f:
+                        samples = [json.loads(line) for line in f.readlines()]
+                    tensor_samples = [tensorizer.tensorize_example(sample, is_training) for sample in samples]
+                    self.tensor_samples[split] += [(doc_key, self.convert_to_torch_tensor(*tensor)) for doc_key, tensor
+                                                   in tensor_samples]
             self.stored_info = tensorizer.stored_info
             # Cache tensorized samples
             with open(cache_path, 'wb') as f:
@@ -95,6 +100,7 @@ class Tensorizer:
         self.stored_info['tokens'] = {}  # {doc_key: ...}
         self.stored_info['subtoken_maps'] = {}  # {doc_key: ...}; mapping back to tokens
         self.stored_info['gold'] = {}  # {doc_key: ...}
+        self.stored_info["mentions"] = {}
         self.stored_info['genre_dict'] = {genre: idx for idx, genre in enumerate(config['genres'])}
 
     def _tensorize_spans(self, spans):
@@ -163,21 +169,23 @@ class Tensorizer:
         doc_key = example['doc_key']
         self.stored_info['subtoken_maps'][doc_key] = example.get('subtoken_map', None)
         self.stored_info['gold'][doc_key] = example['clusters']
+        self.stored_info["mentions"][doc_key] = example["mentions"]
         # self.stored_info['tokens'][doc_key] = example['tokens']
 
         # Construct example
         genre = self.stored_info['genre_dict'].get(doc_key[:2], 0)
         gold_starts, gold_ends = self._tensorize_spans(gold_mentions)
-        example_tensor = (input_ids, input_mask, speaker_ids, sentence_len, genre, sentence_map, is_training,
-                          gold_starts, gold_ends, gold_mention_cluster_map)
+        mention_starts, mention_ends = self._tensorize_spans(example["mentions"])
+        example_tensor = (input_ids, input_mask, speaker_ids, mention_starts, mention_ends, sentence_len, genre,
+                          sentence_map, is_training, gold_starts, gold_ends, gold_mention_cluster_map)
 
         if is_training and len(sentences) > self.config['max_training_sentences']:
             return doc_key, self.truncate_example(*example_tensor)
         else:
             return doc_key, example_tensor
 
-    def truncate_example(self, input_ids, input_mask, speaker_ids, sentence_len, genre, sentence_map, is_training,
-                         gold_starts, gold_ends, gold_mention_cluster_map, sentence_offset=None):
+    def truncate_example(self, input_ids, input_mask, speaker_ids, mention_starts, mention_ends, sentence_len, genre,
+                         sentence_map, is_training, gold_starts, gold_ends, gold_mention_cluster_map, sentence_offset=None):
         max_sentences = self.config["max_training_sentences"]
         num_sentences = input_ids.shape[0]
         assert num_sentences > max_sentences
@@ -199,5 +207,9 @@ class Tensorizer:
         gold_ends = gold_ends[gold_spans] - word_offset
         gold_mention_cluster_map = gold_mention_cluster_map[gold_spans]
 
-        return input_ids, input_mask, speaker_ids, sentence_len, genre, sentence_map, \
+        mention_spans = (mention_starts < word_offset + num_words) & (mention_ends >= word_offset)
+        mention_starts = mention_starts[mention_spans] - word_offset
+        mention_ends = mention_ends[mention_spans] - word_offset
+
+        return input_ids, input_mask, speaker_ids, mention_starts, mention_ends, sentence_len, genre, sentence_map, \
                is_training, gold_starts, gold_ends, gold_mention_cluster_map
