@@ -119,7 +119,7 @@ class CorefModel(nn.Module):
             do_loss = True
 
         # Get token emb
-        mention_doc, _ = self.bert(input_ids, attention_mask=input_mask)  # [num seg, num max tokens, emb size]
+        mention_doc = self.bert(input_ids, attention_mask=input_mask, return_dict=True)["last_hidden_state"]  # [num seg, num max tokens, emb size]
         input_mask = input_mask.to(torch.bool)
         mention_doc = mention_doc[input_mask]
         speaker_ids = speaker_ids[input_mask]

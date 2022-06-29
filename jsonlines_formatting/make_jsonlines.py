@@ -3,7 +3,7 @@
 
 from jsonlines_formatting.reader import *
 from jsonlines_formatting.utils_mapping import *
-from transformers import BertTokenizerFast
+from transformers import BertTokenizer
 from spacy_mention_extraction.collect_markables_only_spacy import extract_chunks_as_markables
 
 from util import flatten
@@ -171,7 +171,7 @@ input_dir = sys.argv[2] # ../CRAC_data/
 data_prefixes = ['2022_AMI_'+mode+'_v0', 'light_'+mode+'.2022', 'Persuasion_'+mode+'.2022',
                  "RST_DTreeBank_"+mode+".ARRAU3.0", "Switchboard_"+mode+".2022"]
 doc_prefixes = ['ami', 'light', 'persuasion', "arrau", "switchboard"]
-tokenizer = BertTokenizerFast.from_pretrained(sys.argv[3])
+tokenizer = BertTokenizer.from_pretrained(sys.argv[3]) # BertTokenizerFast.from_pretrained(sys.argv[3]) # SpanBERT/spanbert-large-cased
 max_segment_length = int(sys.argv[4]) #512 or 384
 json_doc_name = '2022_SharedTask_'+mode+"_"+str(max_segment_length)# '2022_SharedTask_train' '2022_SharedTask_dev' '2022_SharedTask_test'
 
