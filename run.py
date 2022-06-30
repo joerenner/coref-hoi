@@ -163,7 +163,7 @@ class Runner:
         model.eval()
         for i, (doc_key, tensor_example) in enumerate(tensor_examples):
             gold_clusters = stored_info['gold'][doc_key]
-            tensor_example = tensor_example[:7]  # Strip out gold
+            tensor_example = tensor_example[:9]  # Strip out gold
             example_gpu = [d.to(self.device) for d in tensor_example]
             with torch.no_grad():
                 _, _, _, span_starts, span_ends, antecedent_idx, antecedent_scores = model(*example_gpu)
