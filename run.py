@@ -171,7 +171,11 @@ class Runner:
             antecedent_idx, antecedent_scores = antecedent_idx.tolist(), antecedent_scores.tolist()
             predicted_clusters = model.update_evaluator(span_starts, span_ends, antecedent_idx, antecedent_scores, gold_clusters, evaluator)
             doc_to_prediction[doc_key] = predicted_clusters
-
+        """
+        with open("spacy_mentions_pred.json", "w") as pred_file:
+            import json
+            json.dump(doc_to_prediction, pred_file)
+        """
         p, r, f = evaluator.get_prf()
         metrics = {'Eval_Avg_Precision': p * 100, 'Eval_Avg_Recall': r * 100, 'Eval_Avg_F1': f * 100}
         for name, score in metrics.items():
