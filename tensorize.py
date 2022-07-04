@@ -33,23 +33,37 @@ class CorefDataProcessor:
     def get_tensor_examples(self):
         """ For dataset samples """
         cache_path = self.get_cache_path()
+        if "just_st_data" in self.config:
+            just_st_data = self.config["just_st_data"]
+        else:
+            just_st_data = False
         if os.path.exists(cache_path):
             # Load cached tensors if exists
             with open(cache_path, 'rb') as f:
                 self.tensor_samples, self.stored_info = pickle.load(f)
                 logger.info('Loaded tensorized examples from cache')
+            if just_st_data:
+                for split in self.tensor_samples:
+                    self.tensor_samples[split] = [x for x in self.tensor_samples[split] if not all(y not in x[0] for y in ["ami", "switchboard", "light", "arrau", "persuasion"])]
         else:
             # Generate tensorized samples
             self.tensor_samples = {}
             tensorizer = Tensorizer(self.config, self.tokenizer)
-            paths = {
-                'trn': [join(self.data_dir, f'train.{self.language}.{self.max_seg_len}.jsonlines'),
-                        join(self.data_dir, f"2022_SharedTask_train_{self.max_seg_len}.jsonl")],
-                'dev': [join(self.data_dir, f'dev.{self.language}.{self.max_seg_len}.jsonlines'),
-                        join(self.data_dir, f"2022_SharedTask_dev_{self.max_seg_len}.jsonl")],
-                'tst': [join(self.data_dir, f'test.{self.language}.{self.max_seg_len}.jsonlines'),
-                        join(self.data_dir, f"2022_SharedTask_test_{self.max_seg_len}.jsonl")],
-            }
+            if just_st_data:
+                paths = {
+                    'trn': [join(self.data_dir, f"2022_SharedTask_train_{self.max_seg_len}.jsonl")],
+                    'dev': [join(self.data_dir, f"2022_SharedTask_dev_{self.max_seg_len}.jsonl")],
+                    'tst': [join(self.data_dir, f"2022_SharedTask_test_{self.max_seg_len}.jsonl")],
+                }
+            else:
+                paths = {
+                    'trn': [join(self.data_dir, f'train.{self.language}.{self.max_seg_len}.jsonlines'),
+                            join(self.data_dir, f"2022_SharedTask_train_{self.max_seg_len}.jsonl")],
+                    'dev': [join(self.data_dir, f'dev.{self.language}.{self.max_seg_len}.jsonlines'),
+                            join(self.data_dir, f"2022_SharedTask_dev_{self.max_seg_len}.jsonl")],
+                    'tst': [join(self.data_dir, f'test.{self.language}.{self.max_seg_len}.jsonlines'),
+                            join(self.data_dir, f"2022_SharedTask_test_{self.max_seg_len}.jsonl")],
+                }
             for split, split_paths in paths.items():
                 self.tensor_samples[split] = []
                 for path in split_paths:
