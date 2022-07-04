@@ -149,7 +149,7 @@ class Runner:
 
         logger.info('**********Finished training**********')
         logger.info('Actual update steps: %d' % len(loss_history))
-
+        self.save_model_checkpoint(model, total_update_steps)
         # Wrap up
         tb_writer.close()
         return loss_history
