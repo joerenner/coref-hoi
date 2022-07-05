@@ -10,15 +10,15 @@ dlx() {
 }
 
 conll_url=http://conll.cemantix.org/2012/download
-dlx $conll_url conll-2012-train.v4.tar.gz
-dlx $conll_url conll-2012-development.v4.tar.gz
-dlx $conll_url/test conll-2012-test-key.tar.gz
-dlx $conll_url/test conll-2012-test-official.v9.tar.gz
+#dlx $conll_url conll-2012-train.v4.tar.gz
+#dlx $conll_url conll-2012-development.v4.tar.gz
+#dlx $conll_url/test conll-2012-test-key.tar.gz
+#dlx $conll_url/test conll-2012-test-official.v9.tar.gz
 
-dlx $conll_url conll-2012-scripts.v3.tar.gz
+#dlx $conll_url conll-2012-scripts.v3.tar.gz
 # dlx http://conll.cemantix.org/download reference-coreference-scorers.v8.01.tar.gz
 
-bash $data_dir/conll-2012/v3/scripts/skeleton2conll.sh -D $ontonotes_path/data/files/data $data_dir/conll-2012
+#bash $data_dir/conll-2012/v3/scripts/skeleton2conll.sh -D $ontonotes_path/data/files/data $data_dir/conll-2012
 
 function compile_partition() {
     rm -f $2.$5.$3$4
@@ -35,5 +35,5 @@ compile_language english
 #compile_language chinese
 #compile_language arabic
 
-python preprocess.py --input_dir $data_dir --output_dir $data_dir --seg_len 384
-python preprocess.py --input_dir $data_dir --output_dir $data_dir --seg_len 512
+#python preprocess.py --input_dir $data_dir --output_dir $data_dir --seg_len 384
+#python preprocess.py --input_dir $data_dir --output_dir $data_dir --seg_len 512
