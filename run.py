@@ -22,6 +22,28 @@ logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s - %(message)s
 logger = logging.getLogger()
 
 
+def example_to_gpu(example, device):
+    new_example = [x.to(device) for x in example[:10]]
+    candidates = example[-1]
+    candidates["wordnet"]["candidate_entity_priors"] = example[-1]["wordnet"][
+        "candidate_entity_priors"].to(device)
+    candidates["wordnet"]["candidate_entities"]["ids"] = \
+        example[-1]["wordnet"]["candidate_entities"]["ids"].to(device)
+    candidates["wordnet"]["candidate_spans"] = \
+        example[-1]["wordnet"]["candidate_spans"].to(device)
+    candidates["wordnet"]["candidate_segment_ids"] = example[-1]["wordnet"][
+        "candidate_segment_ids"].to(device)
+    candidates["wiki"]["candidate_entity_priors"] = example[-1]["wiki"][
+        "candidate_entity_priors"].to(device)
+    candidates["wiki"]["candidate_entities"]["ids"] = \
+        example[-1]["wiki"]["candidate_entities"]["ids"].to(device)
+    candidates["wiki"]["candidate_spans"] = \
+        example[-1]["wiki"]["candidate_spans"].to(device)
+    candidates["wiki"]["candidate_segment_ids"] = example[-1]["wiki"][
+        "candidate_segment_ids"].to(device)
+    new_example.append(candidates)
+    return new_example
+
 class Runner:
     def __init__(self, config_name, gpu_id=0, seed=None):
         self.name = config_name
@@ -98,7 +120,7 @@ class Runner:
             for doc_key, example in examples_train:
                 # Forward pass
                 model.train()
-                example_gpu = [d.to(self.device) for d in example]
+                example_gpu = example_to_gpu(example, self.device)
                 _, loss = model(*example_gpu)
 
                 # Backward; accumulate gradients and clip by grad norm
@@ -285,7 +307,7 @@ class Runner:
 
 if __name__ == '__main__':
     config_name, gpu_id = sys.argv[1], int(sys.argv[2])
-    runner = Runner(config_name, gpu_id)
+    runner = Runner(config_name, None)
     model = runner.initialize_model()
 
     runner.train(model)
