@@ -7,7 +7,10 @@ from collections import Iterable
 import numpy as np
 import torch.nn.init as init
 import higher_order as ho
-
+from kb.wordnet import WordNetAllEmbedding
+from allennlp.common import Params
+from allennlp.data.vocabulary import Vocabulary
+from allennlp.modules.token_embedders import Embedding
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
                     datefmt='%m/%d/%Y %H:%M:%S',
@@ -17,6 +20,10 @@ logger = logging.getLogger()
 
 class CorefModel(nn.Module):
     def __init__(self, config, device, num_genres=None):
+        """
+        knowledge_base: "both" "wiki" or "wordnet"
+        entity_emb_choice: "avg" or "max"
+        """
         super().__init__()
         self.config = config
         self.device = device
@@ -29,10 +36,40 @@ class CorefModel(nn.Module):
             assert config['fine_grained']  # Higher-order is in slow fine-grained scoring
 
         # Model
+        ####### entity embeddings
+        self.knowledge_base = config["knowledge_base"]
+        if config["knowledge_base"] == "both" or config["knowledge_base"] == "wiki":
+            vocab = Vocabulary.from_files("./simple_kb/vocabulary")
+            wiki_params = Params({
+                "embedding_dim": 300,
+                "pretrained_file": "https://allennlp.s3-us-west-2.amazonaws.com/knowbert/wiki_entity_linking/entities_glove_format.gz",
+                "sparse": False,
+                "trainable": False,
+                "vocab_namespace": "entity_wiki"
+            })
+            self.wiki_embeddings = Embedding.from_params(vocab, wiki_params)
+            self.wiki_null_embedding = torch.nn.Parameter(torch.zeros(300), requires_grad=True)
+            self.wiki_null_embedding.data.normal_(mean=0.0, std=0.02)
+        if config["knowledge_base"] == "wordnet" or config["knowledge_base"] == "both":
+            self.wn_embeddings = WordNetAllEmbedding(
+                embedding_file="https://allennlp.s3-us-west-2.amazonaws.com/knowbert/wordnet/wordnet_synsets_mask_null_vocab_embeddings_tucker_gensen.hdf5",
+                entity_dim=200,
+                entity_file="https://allennlp.s3-us-west-2.amazonaws.com/knowbert/wordnet/entities.jsonl",
+                vocab_file="https://allennlp.s3-us-west-2.amazonaws.com/knowbert/wordnet/wordnet_synsets_mask_null_vocab.txt",
+                entity_h5_key="tucker_gensen",
+                dropout=0.1,
+                pos_embedding_dim=None,
+                include_null_embedding=False)
+            self.wn_null_embedding = torch.nn.Parameter(torch.zeros(200), requires_grad=True)
+            self.wn_null_embedding.data.normal_(mean=0.0, std=0.02)
+        self.entity_emb_choice = config["entity_emb_choice"]
+        #######
         self.dropout = nn.Dropout(p=config['dropout_rate'])
         self.bert = BertModel.from_pretrained(config['bert_pretrained_name_or_path'])
 
-        self.bert_emb_size = self.bert.config.hidden_size
+        self.bert_emb_size = self.bert.config.hidden_size + \
+            (300 if config["knowledge_base"] == "both" or config["knowledge_base"] == "wiki" else 0) + \
+            (200 if config["knowledge_base"] == "wordnet" or config["knowledge_base"] == "both" else 0)
         self.span_emb_size = self.bert_emb_size * 3
         if config['use_features']:
             self.span_emb_size += config['feature_emb_size']
@@ -72,6 +109,34 @@ class CorefModel(nn.Module):
         init.normal_(emb.weight, std=std)
         return emb
 
+    def aggregate_entity_embeddings(self, entity_embeddings, entity_priors):
+        # emb are of shape: (segments, num_candidate_spans, max_num_candidates (padded if less), emb_dim)
+        # candidate priors: (segments, num_candidate_spans, max_num_candidates)
+        emb_size = entity_embeddings.shape[-1]
+        if self.entity_emb_choice == "max":
+            max_entity_indices = torch.max(entity_priors, dim=-1)[1].unsqueeze(-1).unsqueeze(-1).repeat(1, 1, 1, emb_size)
+            return torch.gather(entity_embeddings, 2, max_entity_indices).squeeze(-2)
+        elif self.entity_emb_choice == "avg":
+            return torch.matmul(entity_priors.unsqueeze(2), entity_embeddings).squeeze(2)
+
+    @staticmethod
+    def compute_sequence_entity_embeddings(entity_embeddings, entity_spans, input_id_shape, null_embedding, device):
+        # entity_embeddings: shape (num_segments, max_entities, emb_dim)
+        # entity_spans: shape (num_segments, max_entities, 2 (start, end)) (padded spans are [-1, -1])
+        seq_emb = torch.zeros((input_id_shape[0], input_id_shape[1], entity_embeddings.shape[-1])).to(device)
+        for i in range(input_id_shape[0]):
+            null_indices = set(range(input_id_shape[1]))
+            # valid_span_mask = entity_spans[i] >= 0
+            # sel = entity_spans[i][valid_span_mask].view(-1, 2)
+            # seq_emb[i, :, entity_spans[i][valid_span_mask]] += entity_embeddings[i]
+            for j in range(entity_spans.shape[1]):
+                if torch.sum(entity_spans[i, j]) == -2:
+                    break
+                seq_emb[i, entity_spans[i, j, 0]:entity_spans[i, j, 1] + 1] += entity_embeddings[i, j]
+                null_indices -= set(range(entity_spans[i, j, 0], entity_spans[i, j, 1] + 1))
+            seq_emb[i, list(null_indices)] = null_embedding
+        return seq_emb
+
     def make_linear(self, in_features, out_features, bias=True, std=0.02):
         linear = nn.Linear(in_features, out_features, bias)
         init.normal_(linear.weight, std=std)
@@ -106,7 +171,8 @@ class CorefModel(nn.Module):
         return self.get_predictions_and_loss(*input)
 
     def get_predictions_and_loss(self, input_ids, input_mask, speaker_ids, sentence_len, genre, sentence_map,
-                                 is_training, gold_starts=None, gold_ends=None, gold_mention_cluster_map=None):
+                                 is_training, gold_starts=None, gold_ends=None, gold_mention_cluster_map=None,
+                                 candidates=None):
         """ Model and input are already on the device """
         device = self.device
         conf = self.config
@@ -117,8 +183,27 @@ class CorefModel(nn.Module):
             assert gold_ends is not None
             do_loss = True
 
+        if self.knowledge_base == "both" or self.knowledge_base == "wiki":
+            wiki_seq_emb = self.aggregate_entity_embeddings(self.wiki_embeddings(candidates["wiki"]["candidate_entities"]["ids"]),
+                                                            candidates["wiki"]["candidate_entity_priors"])
+            wiki_seq_emb = self.compute_sequence_entity_embeddings(wiki_seq_emb, candidates["wiki"]["candidate_spans"],
+                                                                   input_ids.shape, self.wiki_null_embedding,
+                                                                   input_ids.device)
+        if self.knowledge_base == "both" or self.knowledge_base == "wordnet":
+            wn_seq_emb = self.aggregate_entity_embeddings(self.wn_embeddings(candidates["wordnet"]["candidate_entities"]["ids"]),
+                                                          candidates["wordnet"]["candidate_entity_priors"])
+            wn_seq_emb = self.compute_sequence_entity_embeddings(wn_seq_emb, candidates["wordnet"]["candidate_spans"],
+                                                                 input_ids.shape, self.wn_null_embedding,
+                                                                 input_ids.device)
+
         # Get token emb
-        mention_doc, _ = self.bert(input_ids, attention_mask=input_mask)  # [num seg, num max tokens, emb size]
+        mention_doc = self.bert(input_ids, attention_mask=input_mask, return_dict=True)["last_hidden_state"]  # [num seg, num max tokens, emb size]
+
+        if self.knowledge_base == "both" or self.knowledge_base == "wiki":
+            mention_doc = torch.cat((mention_doc, wiki_seq_emb), dim=-1)
+        if self.knowledge_base == "both" or self.knowledge_base == "wordnet":
+            mention_doc = torch.cat((mention_doc, wn_seq_emb), dim=-1)
+
         input_mask = input_mask.to(torch.bool)
         mention_doc = mention_doc[input_mask]
         speaker_ids = speaker_ids[input_mask]
