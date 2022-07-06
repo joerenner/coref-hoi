@@ -15,6 +15,7 @@ from torch.optim.lr_scheduler import LambdaLR
 from model import CorefModel
 import conll
 import sys
+import os
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
                     datefmt='%m/%d/%Y %H:%M:%S',
@@ -317,6 +318,9 @@ class Runner:
     def save_model_checkpoint(self, model, step):
         if step < 30000:
             return  # Debug
+        for fi in os.listdir(self.config['log_dir']):
+            if fi.startswith(f"model_{self.name_suffix}") and fi.endswith(".bin"):
+                os.remove(join(self.config['log_dir'], fi))
         path_ckpt = join(self.config['log_dir'], f'model_{self.name_suffix}_{step}.bin')
         torch.save(model.state_dict(), path_ckpt)
         logger.info('Saved model to %s' % path_ckpt)
