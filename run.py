@@ -69,6 +69,25 @@ class Runner:
         # Set up data
         self.data = CorefDataProcessor(self.config)
 
+    def move_candidates_to_gpu(self, candidates):
+        candidates["wordnet"]["candidate_entity_priors"] = candidates["wordnet"][
+            "candidate_entity_priors"].to(self.device)
+        candidates["wordnet"]["candidate_entities"]["ids"] = \
+            candidates["wordnet"]["candidate_entities"]["ids"].to(self.device)
+        candidates["wordnet"]["candidate_spans"] = \
+            candidates["wordnet"]["candidate_spans"].to(self.device)
+        candidates["wordnet"]["candidate_segment_ids"] = candidates["wordnet"][
+            "candidate_segment_ids"].to(self.device)
+        candidates["wiki"]["candidate_entity_priors"] = candidates["wiki"][
+            "candidate_entity_priors"].to(self.device)
+        candidates["wiki"]["candidate_entities"]["ids"] = \
+            candidates["wiki"]["candidate_entities"]["ids"].to(self.device)
+        candidates["wiki"]["candidate_spans"] = \
+            candidates["wiki"]["candidate_spans"].to(self.device)
+        candidates["wiki"]["candidate_segment_ids"] = candidates["wiki"][
+            "candidate_segment_ids"].to(self.device)
+        return candidates
+
     def initialize_model(self, saved_suffix=None):
         model = CorefModel(self.config, self.device)
         if saved_suffix:
@@ -185,8 +204,11 @@ class Runner:
         model.eval()
         for i, (doc_key, tensor_example) in enumerate(tensor_examples):
             gold_clusters = stored_info['gold'][doc_key]
+            candidates = tensor_example[-1]
+            candidates = self.move_candidates_to_gpu(candidates)
             tensor_example = tensor_example[:7]  # Strip out gold
             example_gpu = [d.to(self.device) for d in tensor_example]
+            example_gpu = example_gpu + [None, None, None, candidates]
             with torch.no_grad():
                 _, _, _, span_starts, span_ends, antecedent_idx, antecedent_scores = model(*example_gpu)
             span_starts, span_ends = span_starts.tolist(), span_ends.tolist()
