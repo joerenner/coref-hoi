@@ -8,7 +8,7 @@ def evaluate(config_name, gpu_id, saved_suffix):
 
     examples_train, examples_dev, examples_test = runner.data.get_tensor_examples()
     stored_info = runner.data.get_stored_info()
-
+    examples_test = [x for x in examples_test if not all(y not in x[0] for y in ["persuasion"])]
     # runner.evaluate(model, examples_dev, stored_info, 0, official=True, conll_path=runner.config['conll_eval_path'])  # Eval dev
     # print('=================================')
     runner.evaluate(model, examples_test, stored_info, 0, official=False, conll_path=runner.config['conll_test_path'], output_preds=True)  # Eval test
@@ -16,4 +16,4 @@ def evaluate(config_name, gpu_id, saved_suffix):
 
 if __name__ == '__main__':
     config_name, saved_suffix, gpu_id = sys.argv[1], sys.argv[2], int(sys.argv[3])
-    evaluate(config_name, gpu_id, saved_suffix)
+    evaluate(config_name, None, saved_suffix)
