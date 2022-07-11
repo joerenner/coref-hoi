@@ -197,7 +197,8 @@ class Runner:
         tb_writer.close()
         return loss_history
 
-    def evaluate(self, model, tensor_examples, stored_info, step, official=False, conll_path=None, tb_writer=None, output_preds=False):
+    def evaluate(self, model, tensor_examples, stored_info, step, official=False, conll_path=None, tb_writer=None,
+                 output_preds=False):
         logger.info('Step %d: evaluating on %d samples...' % (step, len(tensor_examples)))
         model.to(self.device)
         evaluator = CorefEvaluator()
@@ -218,7 +219,7 @@ class Runner:
             predicted_clusters = model.update_evaluator(span_starts, span_ends, antecedent_idx, antecedent_scores, gold_clusters, evaluator)
             doc_to_prediction[doc_key] = predicted_clusters
             if output_preds:
-                doc_pred = {"doc_key": doc_key, "subtoken_map": stored_info["subtoken_maps"][doc_key], "clusters": predicted_clusters}
+                doc_pred = {"doc_key": doc_key[doc_key.find('/')+1:], "subtoken_map": stored_info["subtoken_maps"][doc_key], "clusters": predicted_clusters}
                 outputs[doc_key] = doc_pred
 
         if output_preds:
