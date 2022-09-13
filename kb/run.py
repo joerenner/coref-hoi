@@ -7,6 +7,7 @@ from transformers import AdamW
 from torch.optim import Adam
 from tensorize import CorefDataProcessor
 from tqdm import tqdm
+import os
 import util
 import time
 from os.path import join
@@ -16,8 +17,6 @@ from torch.optim.lr_scheduler import LambdaLR
 from model import CorefModel
 import conll
 import sys
-import os
-import pickle
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
                     datefmt='%m/%d/%Y %H:%M:%S',
@@ -171,7 +170,6 @@ class Runner:
 
         logger.info('**********Finished training**********')
         logger.info('Actual update steps: %d' % len(loss_history))
-        self.save_model_checkpoint(model, len(loss_history), remove_old=False)
 
         # Wrap up
         tb_writer.close()
@@ -182,7 +180,7 @@ class Runner:
         model.to(self.device)
         evaluator = CorefEvaluator()
         doc_to_prediction = {}
-        doc_to_attention_scores = {}
+
         model.eval()
         for i, (doc_key, tensor_example) in tqdm(enumerate(tensor_examples)):
             gold_clusters = stored_info['gold'][doc_key]
@@ -192,20 +190,15 @@ class Runner:
             example_gpu = [d.to(self.device) for d in tensor_example]
             example_gpu = example_gpu + [None, None, None, candidates]
             with torch.no_grad():
-                _, _, _, span_starts, span_ends, antecedent_idx, antecedent_scores, entity_atten_scores = model(*example_gpu)
+                _, _, _, span_starts, span_ends, antecedent_idx, antecedent_scores = model(*example_gpu)
             span_starts, span_ends = span_starts.tolist(), span_ends.tolist()
             antecedent_idx, antecedent_scores = antecedent_idx.tolist(), antecedent_scores.tolist()
             predicted_clusters = model.update_evaluator(span_starts, span_ends, antecedent_idx, antecedent_scores, gold_clusters, evaluator)
             doc_to_prediction[doc_key] = predicted_clusters
-            doc_to_attention_scores[doc_key] = {k: v.tolist() for k, v in entity_atten_scores.items()}
-        """
         with open("knowbert_bertbase_cm_test_pred.txt", "w") as pred_file:
             with open(conll_path, "r") as gold_file:
                 conll.output_conll(gold_file, pred_file, doc_to_prediction, stored_info['subtoken_maps'])
 
-        with open("knowbert_attention_scores.pkl", 'wb') as f:
-            pickle.dump(doc_to_attention_scores, f)
-        """
         p, r, f = evaluator.get_prf()
         metrics = {'Eval_Avg_Precision': p * 100, 'Eval_Avg_Recall': r * 100, 'Eval_Avg_F1': f * 100}
         for name, score in metrics.items():
@@ -230,7 +223,7 @@ class Runner:
             tensor_example = tensor_example[:7]
             example_gpu = [d.to(self.device) for d in tensor_example]
             with torch.no_grad():
-                _, _, _, span_starts, span_ends, antecedent_idx, antecedent_scores, entity_atten_scores = model(*example_gpu)
+                _, _, _, span_starts, span_ends, antecedent_idx, antecedent_scores = model(*example_gpu)
             span_starts, span_ends = span_starts.tolist(), span_ends.tolist()
             antecedent_idx, antecedent_scores = antecedent_idx.tolist(), antecedent_scores.tolist()
             clusters, mention_to_cluster_id, antecedents = model.get_predicted_clusters(span_starts, span_ends, antecedent_idx, antecedent_scores)
@@ -304,13 +297,12 @@ class Runner:
         return schedulers
         # return LambdaLR(optimizer, [lr_lambda_bert, lr_lambda_bert, lr_lambda_task, lr_lambda_task])
 
-    def save_model_checkpoint(self, model, step, remove_old=True):
-        if step < 50000:
+    def save_model_checkpoint(self, model, step):
+        if step < 30000:
             return  # Debug
-        if remove_old:
-            for fi in os.listdir(self.config['log_dir']):
-                if fi.startswith(f"model_{self.name_suffix}") and fi.endswith(".bin"):
-                    os.remove(join(self.config['log_dir'], fi))
+        for fi in os.listdir():
+            if fi.endswith(".bin"):
+                os.remove(join(self.config['log_dir'], fi))
         path_ckpt = join(self.config['log_dir'], f'model_{self.name_suffix}_{step}.bin')
         torch.save(model.state_dict(), path_ckpt)
         logger.info('Saved model to %s' % path_ckpt)
@@ -322,19 +314,8 @@ class Runner:
 
 
 if __name__ == '__main__':
-    import pickle
-    with open("uncased_cached.tensors.english.128.11.bin", "rb") as f:
-        uncased = pickle.load(f)
-
-    uncased = uncased[0]["tst"]
-
-    with open("cased_cached.tensors.english.512.3.bin", "rb") as f:
-        cased = pickle.load(f)
-
-    cased = cased[0]["tst"]
-
     config_name, gpu_id = sys.argv[1], int(sys.argv[2])
-    runner = Runner(config_name, None)
+    runner = Runner(config_name, gpu_id)
     model = runner.initialize_model()
 
     runner.train(model)

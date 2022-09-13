@@ -159,11 +159,12 @@ def cluster_merging(top_span_emb, top_antecedent_idx, top_antecedent_scores, emb
 
 
 def _merge_span_to_cluster(cluster_emb, cluster_sizes, cluster_to_merge_id, span_emb, reduce):
+    current = cluster_emb[cluster_to_merge_id].detach().clone()
     cluster_size = cluster_sizes[cluster_to_merge_id].item()
     if reduce == 'mean':
-        cluster_emb[cluster_to_merge_id] = (cluster_emb[cluster_to_merge_id] * cluster_size + span_emb) / (cluster_size + 1)
+        cluster_emb[cluster_to_merge_id] = (current * cluster_size + span_emb) / (cluster_size + 1)
     elif reduce == 'max':
-        cluster_emb[cluster_to_merge_id], _ = torch.max(torch.stack([cluster_emb[cluster_to_merge_id], span_emb]), dim=0)
+        cluster_emb[cluster_to_merge_id], _ = torch.max(torch.stack([current, span_emb]), dim=0)
     else:
         raise ValueError('reduce value is invalid: %s' % reduce)
     cluster_sizes[cluster_to_merge_id] += 1

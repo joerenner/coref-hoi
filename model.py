@@ -6,6 +6,8 @@ import logging
 from collections import Iterable
 import numpy as np
 import torch.nn.init as init
+from kb.include_all import ModelArchiveFromParams
+from allennlp.common import Params
 import higher_order as ho
 
 
@@ -30,9 +32,11 @@ class CorefModel(nn.Module):
 
         # Model
         self.dropout = nn.Dropout(p=config['dropout_rate'])
-        self.bert = BertModel.from_pretrained(config['bert_pretrained_name_or_path'])
+        # self.bert = BertModel.from_pretrained(config['bert_pretrained_name_or_path'])
+        params = Params({"archive_file": config['bert_pretrained_name_or_path']})
+        self.bert = ModelArchiveFromParams.from_params(params=params)
 
-        self.bert_emb_size = self.bert.config.hidden_size
+        self.bert_emb_size = 768
         self.span_emb_size = self.bert_emb_size * 3
         if config['use_features']:
             self.span_emb_size += config['feature_emb_size']
@@ -106,7 +110,8 @@ class CorefModel(nn.Module):
         return self.get_predictions_and_loss(*input)
 
     def get_predictions_and_loss(self, input_ids, input_mask, speaker_ids, sentence_len, genre, sentence_map,
-                                 is_training, gold_starts=None, gold_ends=None, gold_mention_cluster_map=None):
+                                 is_training, gold_starts=None, gold_ends=None, gold_mention_cluster_map=None,
+                                 candidates=None):
         """ Model and input are already on the device """
         device = self.device
         conf = self.config
@@ -118,7 +123,10 @@ class CorefModel(nn.Module):
             do_loss = True
 
         # Get token emb
-        mention_doc, _ = self.bert(input_ids, attention_mask=input_mask)  # [num seg, num max tokens, emb size]
+        # mention_doc, _ = self.bert(input_ids, attention_mask=input_mask, return_dict=False)  # [num seg, num max tokens, emb size]
+        bert_outputs = self.bert(tokens={"tokens": input_ids}, attention_mask=input_mask, candidates=candidates)
+        mention_doc = bert_outputs['contextual_embeddings']  # [num seg, num max tokens, emb size]
+
         input_mask = input_mask.to(torch.bool)
         mention_doc = mention_doc[input_mask]
         speaker_ids = speaker_ids[input_mask]
@@ -266,7 +274,7 @@ class CorefModel(nn.Module):
             if conf['fine_grained'] and conf['higher_order'] == 'cluster_merging':
                 top_pairwise_scores += cluster_merging_scores
             top_antecedent_scores = torch.cat([torch.zeros(num_top_spans, 1, device=device), top_pairwise_scores], dim=1)  # [num top spans, max top antecedents + 1]
-            return candidate_starts, candidate_ends, candidate_mention_scores, top_span_starts, top_span_ends, top_antecedent_idx, top_antecedent_scores
+            return candidate_starts, candidate_ends, candidate_mention_scores, top_span_starts, top_span_ends, top_antecedent_idx, top_antecedent_scores, bert_outputs['linking_scores']
 
         # Get gold labels
         top_antecedent_cluster_ids = top_span_cluster_ids[top_antecedent_idx]
@@ -331,7 +339,7 @@ class CorefModel(nn.Module):
                     logger.info('loss: %.4f' % loss)
         self.update_steps += 1
 
-        return [candidate_starts, candidate_ends, candidate_mention_scores, top_span_starts, top_span_ends, top_antecedent_idx, top_antecedent_scores], loss
+        return [candidate_starts, candidate_ends, candidate_mention_scores, top_span_starts, top_span_ends, top_antecedent_idx, top_antecedent_scores, bert_outputs['linking_scores']], loss
 
     def _extract_top_spans(self, candidate_idx_sorted, candidate_starts, candidate_ends, num_top_spans):
         """ Keep top non-cross-overlapping candidates ordered by scores; compute on CPU because of loop """
