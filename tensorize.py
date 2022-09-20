@@ -43,9 +43,9 @@ class CorefDataProcessor:
             self.tensor_samples = {}
             tensorizer = Tensorizer(self.config, self.tokenizer)
             paths = {
-                'trn': join(self.data_dir, f'train.{self.language}.{self.max_seg_len}.jsonlines'),
-                'dev': join(self.data_dir, f'dev.{self.language}.{self.max_seg_len}.jsonlines'),
-                'tst': join(self.data_dir, f'test.{self.language}.{self.max_seg_len}.jsonlines')
+                'trn': join(self.data_dir, f'dwie_train_{self.max_seg_len}.jsonlines'),
+                'dev': join(self.data_dir, f'dwie_valid_{self.max_seg_len}.jsonlines'),
+                'tst': join(self.data_dir, f'dwie_test_{self.max_seg_len}.jsonlines')
             }
             for split, path in paths.items():
                 logger.info('Tensorizing examples from %s; results will be cached)' % path)
