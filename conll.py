@@ -4,6 +4,7 @@ import subprocess
 import operator
 import collections
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,69 @@ def output_conll(input_file, output_file, predictions, subtoken_map):
             output_file.write("   ".join(row))
             output_file.write("\n")
             word_index += 1
+
+
+def convert_coref_json_to_ua(JSON_PATH, UA_PATH, MODEL="coref-hoi"):
+    data = []
+    ua_all_lines = []
+
+    if MODEL == "coref-hoi":
+        convert_coref_json_to_ua_doc_fn = convert_coref_json_to_ua_doc_coref_hoi
+    else:
+        raise NotImplementedError
+
+    with open(JSON_PATH, "r") as f:
+        for r in f.readlines():
+            json_doc = json.loads(r.strip())
+            ua_all_lines += convert_coref_json_to_ua_doc_fn(json_doc) + ["\n"]
+
+        with open(UA_PATH, "w") as f:
+            for line in ua_all_lines:
+                f.write(line + "\n")
+
+
+def convert_coref_json_to_ua_doc_coref_hoi(json_doc):
+    # TODO: Include metadata
+    # TODO: Include sentence breaks
+
+    print(json_doc['doc_key'])
+
+    pred_clusters = [tuple(tuple(m) for m in cluster) for cluster in json_doc['clusters']]
+    men_to_pred = {m: clus for c, clus in enumerate(pred_clusters) for m in clus}
+
+    lines = []
+    lines.append(
+        "# global.columns = ID FORM LEMMA UPOS XPOS FEATS HEAD DEPREL DEPS MISC IDENTITY BRIDGING DISCOURSE_DEIXIS REFERENCE NOM_SEM")
+    lines.append("# newdoc id = " + json_doc['doc_key'])
+    #     lines.append("turn_id = " + json_doc['doc_key'].split()[1] + "-t1")
+    #     lines.append("speaker = -")
+    #     lines.append("sent_id = " + json_doc['doc_key'].split()[1] + "-1")
+    markable_id = 1
+    entity_id = 1
+
+    coref_strs = [""] * len(json_doc['tokens'])
+
+    for clus in pred_clusters:
+        for (start, end) in clus:
+            start = json_doc['subtoken_map'][start]
+            end = json_doc['subtoken_map'][end]
+
+            coref_strs[start] += "(EntityID={}|MarkableID=markable_{}".format(entity_id, markable_id)
+            markable_id += 1
+            if start == end:
+                coref_strs[end] += ")"
+            else:
+                coref_strs[end] = ")" + coref_strs[end]
+
+        entity_id += 1
+
+    for _id, token in enumerate(json_doc['tokens']):
+        if coref_strs[_id] == "":
+            coref_strs[_id] = "_"
+        sentence = "{}  {}  _  _  _  _  _  _  _  _  {}  _  _  _  _".format(_id, token, coref_strs[_id])
+        lines.append(sentence)
+
+    return lines
 
 
 def official_conll_eval(gold_path, predicted_path, metric, official_stdout=True):

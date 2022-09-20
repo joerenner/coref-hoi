@@ -16,6 +16,7 @@ from model import CorefModel
 import conll
 import sys
 import os
+import json
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
                     datefmt='%m/%d/%Y %H:%M:%S',
@@ -196,12 +197,13 @@ class Runner:
         tb_writer.close()
         return loss_history
 
-    def evaluate(self, model, tensor_examples, stored_info, step, official=False, conll_path=None, tb_writer=None):
+    def evaluate(self, model, tensor_examples, stored_info, step, official=False, conll_path=None, tb_writer=None,
+                 output_preds=False):
         logger.info('Step %d: evaluating on %d samples...' % (step, len(tensor_examples)))
         model.to(self.device)
         evaluator = CorefEvaluator()
         doc_to_prediction = {}
-
+        outputs = {}
         model.eval()
         for i, (doc_key, tensor_example) in enumerate(tensor_examples):
             gold_clusters = stored_info['gold'][doc_key]
@@ -216,6 +218,22 @@ class Runner:
             antecedent_idx, antecedent_scores = antecedent_idx.tolist(), antecedent_scores.tolist()
             predicted_clusters = model.update_evaluator(span_starts, span_ends, antecedent_idx, antecedent_scores, gold_clusters, evaluator)
             doc_to_prediction[doc_key] = predicted_clusters
+            if output_preds:
+                doc_pred = {"doc_key": doc_key[doc_key.find('/')+1:], "subtoken_map": stored_info["subtoken_maps"][doc_key], "clusters": predicted_clusters}
+                outputs[doc_key] = doc_pred
+
+        if output_preds:
+            with open("./data/2022_SharedTask_test_512.jsonl", 'r') as f:
+                samples = [json.loads(line) for line in f.readlines()]
+                for sample in samples:
+                    if sample["doc_key"] in outputs:
+                        outputs[sample["doc_key"]]["tokens"] = sample["tokens"]
+            ua_lines = []
+            for json_doc in outputs.values():
+                ua_lines += conll.convert_coref_json_to_ua_doc_coref_hoi(json_doc) + ["\n"]
+            with open(f"./{self.config['log_dir']}_{self.name_suffix}.txt", "w") as f:
+                for line in ua_lines:
+                    f.write(line + "\n")
 
         p, r, f = evaluator.get_prf()
         metrics = {'Eval_Avg_Precision': p * 100, 'Eval_Avg_Recall': r * 100, 'Eval_Avg_F1': f * 100}
