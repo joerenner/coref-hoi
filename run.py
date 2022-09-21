@@ -57,14 +57,6 @@ class Runner:
         return model
 
     def move_candidates_to_gpu(self, candidates):
-        candidates["wordnet"]["candidate_entity_priors"] = candidates["wordnet"][
-            "candidate_entity_priors"].to(self.device)
-        candidates["wordnet"]["candidate_entities"]["ids"] = \
-            candidates["wordnet"]["candidate_entities"]["ids"].to(self.device)
-        candidates["wordnet"]["candidate_spans"] = \
-            candidates["wordnet"]["candidate_spans"].to(self.device)
-        candidates["wordnet"]["candidate_segment_ids"] = candidates["wordnet"][
-            "candidate_segment_ids"].to(self.device)
         candidates["wiki"]["candidate_entity_priors"] = candidates["wiki"][
             "candidate_entity_priors"].to(self.device)
         candidates["wiki"]["candidate_entities"]["ids"] = \
@@ -188,9 +180,9 @@ class Runner:
             gold_clusters = stored_info['gold'][doc_key]
             candidates = tensor_example[-1]
             candidates = self.move_candidates_to_gpu(candidates)
-            tensor_example = tensor_example[:7]  # Strip out gold
+            tensor_example = tensor_example[:-1]  # Strip out gold
             example_gpu = [d.to(self.device) for d in tensor_example]
-            example_gpu = example_gpu + [None, None, None, candidates]
+            example_gpu = example_gpu + [candidates]
             with torch.no_grad():
                 _, _, _, span_starts, span_ends, antecedent_idx, antecedent_scores, entity_atten_scores = model(*example_gpu)
             span_starts, span_ends = span_starts.tolist(), span_ends.tolist()
@@ -221,6 +213,7 @@ class Runner:
         return f * 100, metrics
 
     def predict(self, model, tensor_examples):
+        raise ValueError("Use evaluate function")
         logger.info('Predicting %d samples...' % len(tensor_examples))
         model.to(self.device)
         predicted_spans, predicted_antecedents, predicted_clusters = [], [], []
@@ -305,8 +298,6 @@ class Runner:
         # return LambdaLR(optimizer, [lr_lambda_bert, lr_lambda_bert, lr_lambda_task, lr_lambda_task])
 
     def save_model_checkpoint(self, model, step, remove_old=True):
-        if step < 50000:
-            return  # Debug
         if remove_old:
             for fi in os.listdir(self.config['log_dir']):
                 if fi.startswith(f"model_{self.name_suffix}") and fi.endswith(".bin"):
@@ -322,19 +313,8 @@ class Runner:
 
 
 if __name__ == '__main__':
-    import pickle
-    with open("uncased_cached.tensors.english.128.11.bin", "rb") as f:
-        uncased = pickle.load(f)
-
-    uncased = uncased[0]["tst"]
-
-    with open("cased_cached.tensors.english.512.3.bin", "rb") as f:
-        cased = pickle.load(f)
-
-    cased = cased[0]["tst"]
-
     config_name, gpu_id = sys.argv[1], int(sys.argv[2])
-    runner = Runner(config_name, None)
+    runner = Runner(config_name, gpu_id)
     model = runner.initialize_model()
 
     runner.train(model)
