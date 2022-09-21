@@ -178,14 +178,14 @@ class Tensorizer:
         gold_entity_ends = torch.tensor(example["gold_ent_ends"])
         gold_entity_ids = example["gold_ent_ids"]
         gold_entity_priors = example["gold_ent_priors"]
-        max_gold_entities = max([len(x) for x in gold_entity_ids])
+        max_gold_entities = max([len(x) for x in gold_entity_ids]) if len(gold_entity_ids) > 0 else 0
         for i in range(gold_entity_starts.shape[0]):
             gold_entity_ids[i] = F.pad(torch.tensor(gold_entity_ids[i]),
                                        [0, max_gold_entities - len(gold_entity_ids[i])], "constant", 0)
             gold_entity_priors[i] = F.pad(torch.tensor(gold_entity_priors[i]),
                                           [0, max_gold_entities - len(gold_entity_priors[i])], "constant", 0)
-        gold_entity_ids = torch.cat([x.unsqueeze(0) for x in gold_entity_ids], dim=0)
-        gold_entity_priors = torch.cat([x.unsqueeze(0) for x in gold_entity_priors], dim=0)
+        gold_entity_ids = torch.cat([x.unsqueeze(0) for x in gold_entity_ids], dim=0) if len(gold_entity_ids) > 0 else torch.tensor([])
+        gold_entity_priors = torch.cat([x.unsqueeze(0) for x in gold_entity_priors], dim=0) if len(gold_entity_ids) > 0 else torch.tensor([])
 
         # Speakers
         speakers = example['speakers']
@@ -289,11 +289,12 @@ class Tensorizer:
         gold_starts = gold_starts[gold_spans] - word_offset
         gold_ends = gold_ends[gold_spans] - word_offset
         gold_mention_cluster_map = gold_mention_cluster_map[gold_spans]
-        gold_entity_spans = (gold_entity_starts < word_offset + num_words) & (gold_entity_ends >= word_offset)
-        gold_entity_starts = gold_entity_starts[gold_entity_spans] - word_offset
-        gold_entity_ends = gold_entity_ends[gold_entity_spans] - word_offset
-        gold_entity_ids = gold_entity_ids[gold_entity_spans]
-        gold_entity_priors = gold_entity_priors[gold_entity_spans]
+        if gold_entity_starts.shape[0] > 0:
+            gold_entity_spans = (gold_entity_starts < word_offset + num_words) & (gold_entity_ends >= word_offset)
+            gold_entity_starts = gold_entity_starts[gold_entity_spans] - word_offset
+            gold_entity_ends = gold_entity_ends[gold_entity_spans] - word_offset
+            gold_entity_ids = gold_entity_ids[gold_entity_spans]
+            gold_entity_priors = gold_entity_priors[gold_entity_spans]
         if kb_candidates is not None:
             example_tensor = (input_ids, input_mask, speaker_ids, sentence_len, genre, sentence_map, is_training,
                               gold_starts, gold_ends, gold_mention_cluster_map, gold_entity_starts, gold_entity_ends,
