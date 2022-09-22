@@ -126,7 +126,7 @@ class CorefModel(nn.Module):
 
         # Get token emb
         # mention_doc, _ = self.bert(input_ids, attention_mask=input_mask, return_dict=False)  # [num seg, num max tokens, emb size]
-        bert_outputs = self.bert(tokens={"tokens": input_ids}, attention_mask=input_mask, candidates=candidates)
+        bert_outputs = self.bert(tokens={"tokens": input_ids}, attention_mask=input_mask[:, None, None, :], candidates=candidates)
         mention_doc = bert_outputs['contextual_embeddings']  # [num seg, num max tokens, emb size]
 
         input_mask = input_mask.to(torch.bool)
