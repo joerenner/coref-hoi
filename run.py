@@ -15,6 +15,7 @@ from torch.optim.lr_scheduler import LambdaLR
 from model import CorefModel
 import conll
 import sys
+import pickle
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
                     datefmt='%m/%d/%Y %H:%M:%S',
@@ -170,8 +171,12 @@ class Runner:
             span_starts, span_ends = span_starts.tolist(), span_ends.tolist()
             antecedent_idx, antecedent_scores = antecedent_idx.tolist(), antecedent_scores.tolist()
             predicted_clusters = model.update_evaluator(span_starts, span_ends, antecedent_idx, antecedent_scores, gold_clusters, evaluator)
-            doc_to_prediction[doc_key] = predicted_clusters
+            doc_to_prediction[doc_key] = (predicted_clusters, span_starts, span_ends, antecedent_idx, antecedent_scores)
 
+        """
+        with open(f"{self.name_suffix}_{step}_predictions.pkl", 'wb') as f:
+            pickle.dump(doc_to_prediction, f)
+        """
         p, r, f = evaluator.get_prf()
         metrics = {'Eval_Avg_Precision': p * 100, 'Eval_Avg_Recall': r * 100, 'Eval_Avg_F1': f * 100}
         for name, score in metrics.items():
