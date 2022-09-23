@@ -201,7 +201,7 @@ class Runner:
             gold_clusters = stored_info['gold'][doc_key]
             candidates = tensor_example[-1]
             candidates = self.move_candidates_to_gpu(candidates)
-            tensor_example = tensor_example[:-1] 
+            tensor_example = tensor_example[:-1]
             example_gpu = [d.to(self.device) for d in tensor_example]
             example_gpu = example_gpu + [candidates]
             with torch.no_grad():
@@ -332,8 +332,6 @@ class Runner:
         # return LambdaLR(optimizer, [lr_lambda_bert, lr_lambda_bert, lr_lambda_task, lr_lambda_task])
 
     def save_model_checkpoint(self, model, step):
-        if step < 30000:
-            return  # Debug
         for fi in os.listdir(self.config['log_dir']):
             if fi.startswith(f"model_{self.name_suffix}") and fi.endswith(".bin"):
                 os.remove(join(self.config['log_dir'], fi))
