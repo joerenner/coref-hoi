@@ -191,9 +191,8 @@ class Runner:
             doc_to_prediction[doc_key] = predicted_clusters
             doc_to_attention_scores[doc_key] = {k: v.tolist() for k, v in entity_atten_scores.items()}
         """
-        with open("knowbert_bertbase_cm_test_pred.txt", "w") as pred_file:
-            with open(conll_path, "r") as gold_file:
-                conll.output_conll(gold_file, pred_file, doc_to_prediction, stored_info['subtoken_maps'])
+        with open(f"{self.name_suffix}_{step}_predictions.pkl", 'wb') as f:
+            pickle.dump(doc_to_prediction, f)
 
         with open("knowbert_attention_scores.pkl", 'wb') as f:
             pickle.dump(doc_to_attention_scores, f)
