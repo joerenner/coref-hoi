@@ -38,7 +38,8 @@ class CorefModel(nn.Module):
         # Model
         ####### entity embeddings
         self.knowledge_base = config["knowledge_base"]
-        if config["knowledge_base"] == "both" or config["knowledge_base"] == "wiki":
+        if config["knowledge_base"] == "both" or config["knowledge_base"] == "wiki" \
+                or config["knowledge_base"] == "gold":
             vocab = Vocabulary.from_files("./simple_kb/vocabulary")
             wiki_params = Params({
                 "embedding_dim": 300,
@@ -68,7 +69,8 @@ class CorefModel(nn.Module):
         self.bert = BertModel.from_pretrained(config['bert_pretrained_name_or_path'])
 
         self.bert_emb_size = self.bert.config.hidden_size + \
-            (300 if config["knowledge_base"] == "both" or config["knowledge_base"] == "wiki" else 0) + \
+            (300 if config["knowledge_base"] == "both" or config["knowledge_base"] == "wiki" or
+             config["knowledge_base"] == "gold" else 0) + \
             (200 if config["knowledge_base"] == "wordnet" or config["knowledge_base"] == "both" else 0)
         self.span_emb_size = self.bert_emb_size * 3
         if config['use_features']:
@@ -201,7 +203,13 @@ class CorefModel(nn.Module):
         mention_doc = mention_doc[input_mask]
         speaker_ids = speaker_ids[input_mask]
         num_words = mention_doc.shape[0]
-
+        if self.knowledge_base == "gold":
+            wiki_embs = self.wiki_embeddings(gold_entity_ids.long())   # num_spans, num_candidats, emb
+            wiki_embs = wiki_embs[:, 0, :].squeeze(1)
+            doc_ent_embs = self.wiki_null_embedding.repeat(num_words, 1)
+            for i in range(gold_entity_starts.shape[0]):
+                doc_ent_embs[int(gold_entity_starts[i]):int(gold_entity_ends[i])] = wiki_embs[i]
+            mention_doc = torch.cat((mention_doc, doc_ent_embs), dim=-1)
         # Get candidate span
         sentence_indices = sentence_map  # [num tokens]
         candidate_starts = torch.unsqueeze(torch.arange(0, num_words, device=device), 1).repeat(1, self.max_span_width)
