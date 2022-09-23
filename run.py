@@ -72,14 +72,6 @@ class Runner:
         self.data = CorefDataProcessor(self.config)
 
     def move_candidates_to_gpu(self, candidates):
-        candidates["wordnet"]["candidate_entity_priors"] = candidates["wordnet"][
-            "candidate_entity_priors"].to(self.device)
-        candidates["wordnet"]["candidate_entities"]["ids"] = \
-            candidates["wordnet"]["candidate_entities"]["ids"].to(self.device)
-        candidates["wordnet"]["candidate_spans"] = \
-            candidates["wordnet"]["candidate_spans"].to(self.device)
-        candidates["wordnet"]["candidate_segment_ids"] = candidates["wordnet"][
-            "candidate_segment_ids"].to(self.device)
         candidates["wiki"]["candidate_entity_priors"] = candidates["wiki"][
             "candidate_entity_priors"].to(self.device)
         candidates["wiki"]["candidate_entities"]["ids"] = \
@@ -141,7 +133,7 @@ class Runner:
             for doc_key, example in examples_train:
                 # Forward pass
                 model.train()
-                example_gpu = example_to_gpu(example, self.device)
+                example_gpu = [d.to(self.device) if isinstance(d, torch.Tensor) else self.move_candidates_to_gpu(d) for d in example]
                 _, loss = model(*example_gpu)
 
                 # Backward; accumulate gradients and clip by grad norm
@@ -209,11 +201,11 @@ class Runner:
             gold_clusters = stored_info['gold'][doc_key]
             candidates = tensor_example[-1]
             candidates = self.move_candidates_to_gpu(candidates)
-            tensor_example = tensor_example[:7]  # Strip out gold
+            tensor_example = tensor_example[:-1] 
             example_gpu = [d.to(self.device) for d in tensor_example]
-            example_gpu = example_gpu + [None, None, None, candidates]
+            example_gpu = example_gpu + [candidates]
             with torch.no_grad():
-                _, _, _, span_starts, span_ends, antecedent_idx, antecedent_scores = model(*example_gpu)
+                _, _, _, span_starts, span_ends, antecedent_idx, antecedent_scores = model(*example_gpu)[0]
             span_starts, span_ends = span_starts.tolist(), span_ends.tolist()
             antecedent_idx, antecedent_scores = antecedent_idx.tolist(), antecedent_scores.tolist()
             predicted_clusters = model.update_evaluator(span_starts, span_ends, antecedent_idx, antecedent_scores, gold_clusters, evaluator)
@@ -222,6 +214,11 @@ class Runner:
                 doc_pred = {"doc_key": doc_key[doc_key.find('/')+1:], "subtoken_map": stored_info["subtoken_maps"][doc_key], "clusters": predicted_clusters}
                 outputs[doc_key] = doc_pred
 
+        """
+        with open(f"{self.name_suffix}_{step}_predictions.pkl", 'wb') as f:
+            pickle.dump(doc_to_prediction, f)
+            
+            
         if output_preds:
             with open("./data/2022_SharedTask_test_512.jsonl", 'r') as f:
                 samples = [json.loads(line) for line in f.readlines()]
@@ -234,6 +231,7 @@ class Runner:
             with open(f"./{self.config['log_dir']}_{self.name_suffix}.txt", "w") as f:
                 for line in ua_lines:
                     f.write(line + "\n")
+        """
 
         p, r, f = evaluator.get_prf()
         metrics = {'Eval_Avg_Precision': p * 100, 'Eval_Avg_Recall': r * 100, 'Eval_Avg_F1': f * 100}

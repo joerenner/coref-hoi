@@ -172,6 +172,8 @@ class CorefModel(nn.Module):
 
     def get_predictions_and_loss(self, input_ids, input_mask, speaker_ids, sentence_len, genre, sentence_map,
                                  is_training, gold_starts=None, gold_ends=None, gold_mention_cluster_map=None,
+                                 gold_entity_starts=None, gold_entity_ends=None,
+                                 gold_entity_ids=None, gold_entity_priors=None,
                                  candidates=None):
         """ Model and input are already on the device """
         device = self.device
@@ -189,20 +191,11 @@ class CorefModel(nn.Module):
             wiki_seq_emb = self.compute_sequence_entity_embeddings(wiki_seq_emb, candidates["wiki"]["candidate_spans"],
                                                                    input_ids.shape, self.wiki_null_embedding,
                                                                    input_ids.device)
-        if self.knowledge_base == "both" or self.knowledge_base == "wordnet":
-            wn_seq_emb = self.aggregate_entity_embeddings(self.wn_embeddings(candidates["wordnet"]["candidate_entities"]["ids"]),
-                                                          candidates["wordnet"]["candidate_entity_priors"])
-            wn_seq_emb = self.compute_sequence_entity_embeddings(wn_seq_emb, candidates["wordnet"]["candidate_spans"],
-                                                                 input_ids.shape, self.wn_null_embedding,
-                                                                 input_ids.device)
-
         # Get token emb
         mention_doc = self.bert(input_ids, attention_mask=input_mask, return_dict=True)["last_hidden_state"]  # [num seg, num max tokens, emb size]
 
         if self.knowledge_base == "both" or self.knowledge_base == "wiki":
             mention_doc = torch.cat((mention_doc, wiki_seq_emb), dim=-1)
-        if self.knowledge_base == "both" or self.knowledge_base == "wordnet":
-            mention_doc = torch.cat((mention_doc, wn_seq_emb), dim=-1)
 
         input_mask = input_mask.to(torch.bool)
         mention_doc = mention_doc[input_mask]
