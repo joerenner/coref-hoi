@@ -39,18 +39,6 @@ class CorefModel(nn.Module):
         params = Params({"archive_file": config['bert_pretrained_name_or_path']})
         self.bert = ModelArchiveFromParams.from_params(params=params)
         self.gold_entities = config["gold_entities"] if "gold_entities" in config else False
-        """
-        if self.gold_entities:
-            vocab = Vocabulary.from_files("./knowbert_wiki_model/vocabulary")
-            wiki_params = Params({
-                "embedding_dim": 300,
-                "pretrained_file": "https://allennlp.s3-us-west-2.amazonaws.com/knowbert/wiki_entity_linking/entities_glove_format.gz",
-                "sparse": False,
-                "trainable": False,
-                "vocab_namespace": "entity_wiki"
-            })
-            self.wiki_embeddings = Embedding.from_params(vocab, wiki_params)
-        """
 
         self.bert_emb_size = 768
         self.span_emb_size = self.bert_emb_size * 3
@@ -181,15 +169,17 @@ class CorefModel(nn.Module):
                                                    (0, max_spans - seq_num_entities), "constant", 0.0)
                     seq_gold_entity_priors[i] = F.pad(torch.tensor(seq_gold_entity_priors[i]),
                                                       (0, max_spans - seq_num_entities), "constant", 1.0)
-                seq_gold_entity_starts = torch.stack(seq_gold_entity_starts, 0).view(num_sequences, max_spans).long()
-                seq_gold_entity_ends = torch.stack(seq_gold_entity_ends, 0).view(num_sequences, max_spans).long()
-                seq_gold_entity_ids = torch.stack(seq_gold_entity_ids, 0).view(num_sequences, max_spans).long()
-                seq_gold_entity_priors = torch.stack(seq_gold_entity_priors, 0).view(num_sequences, max_spans).float()
-                seq_gold_entity_embs = getattr(self.bert, "wiki_soldered_kg").entity_linker.disambiguator.entity_embeddings(seq_gold_entity_ids)
-                #seq_gold_entity_embs = self.wiki_embeddings(seq_gold_entity_ids)   # num_seq, max_span, emb
-
+                seq_gold_entity_starts = torch.stack(seq_gold_entity_starts, 0).view(num_sequences, max_spans).long().to(self.device)
+                seq_gold_entity_ends = torch.stack(seq_gold_entity_ends, 0).view(num_sequences, max_spans).long().to(self.device)
+                seq_gold_entity_ids = torch.stack(seq_gold_entity_ids, 0).view(num_sequences, max_spans).long().to(self.device)
+                seq_gold_entity_priors = torch.stack(seq_gold_entity_priors, 0).view(num_sequences, max_spans).float().to(self.device)
             else:
-                pass
+                seq_gold_entity_starts = (torch.ones((num_sequences, 1)) * -1).long().to(self.device)
+                seq_gold_entity_ends = (torch.ones((num_sequences, 1)) * -1).long().to(self.device)
+                seq_gold_entity_ids = torch.zeros((num_sequences, 1)).long().to(self.device)
+                seq_gold_entity_priors = torch.zeros((num_sequences, 1)).float().to(self.device)
+            seq_gold_entity_embs = getattr(self.bert, "wiki_soldered_kg").entity_linker.disambiguator.entity_embeddings(
+                seq_gold_entity_ids)
 
         # Get token emb
         # mention_doc, _ = self.bert(input_ids, attention_mask=input_mask, return_dict=False)  # [num seg, num max tokens, emb size]
