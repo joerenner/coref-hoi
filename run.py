@@ -209,7 +209,7 @@ class Runner:
             span_starts, span_ends = span_starts.tolist(), span_ends.tolist()
             antecedent_idx, antecedent_scores = antecedent_idx.tolist(), antecedent_scores.tolist()
             predicted_clusters = model.update_evaluator(span_starts, span_ends, antecedent_idx, antecedent_scores, gold_clusters, evaluator)
-            doc_to_prediction[doc_key] = predicted_clusters
+            doc_to_prediction[doc_key] = (predicted_clusters, span_starts, span_ends, antecedent_idx, antecedent_scores)
             if output_preds:
                 doc_pred = {"doc_key": doc_key[doc_key.find('/')+1:], "subtoken_map": stored_info["subtoken_maps"][doc_key], "clusters": predicted_clusters}
                 outputs[doc_key] = doc_pred
