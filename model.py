@@ -322,7 +322,7 @@ class CorefModel(nn.Module):
             if self.update_steps % 20 == 0:
                 logger.info('---------debug step: %d---------' % self.update_steps)
                 # logger.info('candidates: %d; antecedents: %d' % (num_candidates, max_top_antecedents))
-                logger.info('spans/gold: %d/%d; ratio: %.2f' % (num_top_spans, (top_span_cluster_ids > 0).sum(), (top_span_cluster_ids > 0).sum()/num_top_spans))
+                logger.info('spans/gold: %d/%d; ratio: %.2f' % (num_top_spans, (top_span_cluster_ids > 0).sum(), float((top_span_cluster_ids > 0).sum())/float(num_top_spans)))
                 if conf['mention_loss_coef']:
                     logger.info('mention loss: %.4f' % loss_mention)
                 if conf['loss_type'] == 'marginalized':
