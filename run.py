@@ -188,10 +188,10 @@ class Runner:
             span_starts, span_ends = span_starts.tolist(), span_ends.tolist()
             antecedent_idx, antecedent_scores = antecedent_idx.tolist(), antecedent_scores.tolist()
             predicted_clusters = model.update_evaluator(span_starts, span_ends, antecedent_idx, antecedent_scores, gold_clusters, evaluator)
-            doc_to_prediction[doc_key] = predicted_clusters
+            doc_to_prediction[doc_key] = (predicted_clusters, span_starts, span_ends, antecedent_idx, antecedent_scores)
             doc_to_attention_scores[doc_key] = {k: v.tolist() for k, v in entity_atten_scores.items()}
         """
-        with open(f"{self.name_suffix}_{step}_predictions.pkl", 'wb') as f:
+        with open(f"{join(self.config['log_dir'], self.name_suffix)}_predictions.pkl", 'wb') as f:
             pickle.dump(doc_to_prediction, f)
 
         with open("knowbert_attention_scores.pkl", 'wb') as f:
