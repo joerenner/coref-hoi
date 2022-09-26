@@ -204,11 +204,12 @@ class CorefModel(nn.Module):
         speaker_ids = speaker_ids[input_mask]
         num_words = mention_doc.shape[0]
         if self.knowledge_base == "gold":
-            wiki_embs = self.wiki_embeddings(gold_entity_ids.long())   # num_spans, num_candidats, emb
-            wiki_embs = wiki_embs[:, 0, :].squeeze(1)
             doc_ent_embs = self.wiki_null_embedding.repeat(num_words, 1)
-            for i in range(gold_entity_starts.shape[0]):
-                doc_ent_embs[int(gold_entity_starts[i]):int(gold_entity_ends[i])] = wiki_embs[i]
+            if len(gold_entity_ids.shape) > 1:
+                wiki_embs = self.wiki_embeddings(gold_entity_ids.long())   # num_spans, num_candidats, emb
+                wiki_embs = wiki_embs[:, 0, :].squeeze(1)
+                for i in range(gold_entity_starts.shape[0]):
+                    doc_ent_embs[int(gold_entity_starts[i]):int(gold_entity_ends[i])] = wiki_embs[i]
             mention_doc = torch.cat((mention_doc, doc_ent_embs), dim=-1)
         # Get candidate span
         sentence_indices = sentence_map  # [num tokens]
