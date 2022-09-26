@@ -174,7 +174,7 @@ class Runner:
             doc_to_prediction[doc_key] = (predicted_clusters, span_starts, span_ends, antecedent_idx, antecedent_scores)
 
         """
-        with open(f"{self.name_suffix}_{step}_predictions.pkl", 'wb') as f:
+        with open(f"{join(self.config['log_dir'], self.name_suffix)}_predictions.pkl", 'wb') as f:
             pickle.dump(doc_to_prediction, f)
         """
         p, r, f = evaluator.get_prf()
