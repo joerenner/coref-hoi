@@ -470,6 +470,7 @@ class EntityDisambiguator(BaseEntityDisambiguator, torch.nn.Module):
                 candidate_entities: torch.Tensor,
                 candidate_entity_priors: torch.Tensor,
                 candidate_segment_ids: torch.Tensor,
+                seq_gold_entity_starts, seq_gold_entity_ends, seq_gold_entity_embs, seq_gold_entity_priors,
                 **kwargs
                 ):
         """
@@ -495,19 +496,21 @@ class EntityDisambiguator(BaseEntityDisambiguator, torch.nn.Module):
         """
         # get the candidate entity embeddings
         # (batch_size, num_spans, num_candidates, entity_embedding_dim)
-        candidate_entity_embeddings = self.entity_embeddings(candidate_entities)
-        candidate_entity_embeddings = self.kg_layer_norm(candidate_entity_embeddings.contiguous())
+        # candidate_entity_embeddings = self.entity_embeddings(candidate_entities)
+        # candidate_entity_embeddings = self.kg_layer_norm(candidate_entity_embeddings.contiguous())
 
         # project to entity embedding dim
         # (batch_size, timesteps, entity_dim)
         projected_bert_representations = self.bert_to_kg_projector(contextual_embeddings)
 
         # compute span representations
-        span_mask = (candidate_spans[:, :, 0] > -1).long()
+        span_mask = (seq_gold_entity_starts > -1).long()
+        inclusive_gold_ends = seq_gold_entity_ends - 1
+        gold_candidate_spans = torch.cat([seq_gold_entity_starts.unsqueeze(2), inclusive_gold_ends.unsqueeze(2)], dim=2)
         # (batch_size, num_spans, embedding_dim)
         projected_span_representations = self.span_extractor(
             projected_bert_representations,
-            candidate_spans,
+            gold_candidate_spans,
             mask,
             span_mask
         )
@@ -519,12 +522,22 @@ class EntityDisambiguator(BaseEntityDisambiguator, torch.nn.Module):
                 projected_span_representations, span_mask
             )[-1]
 
-        entity_mask = candidate_entities > 0
+        """
+        projected_span_representations = (batch_size, num_spans, entity_dim)
+        candidate_entity_embeddings = (batch_size, num_spans, num_candidates, entity_embedding_dim)
+        candidate_entity_prior = (batch_size, num_spans, num_candidates)
+            with prior probability of each candidate entity.
+            0 <= candidate_entity_prior <= 1 and candidate_entity_prior.sum(dim=-1) == 1
+        entity_mask = (batch_size, num_spans, num_candidates)
+            with 0/1 bool of whether it is a valid candidate
+        """
+        entity_mask = seq_gold_entity_starts >= 0
+
         return_dict = self.dot_attention_with_prior(
             projected_span_representations,
-            candidate_entity_embeddings,
-            candidate_entity_priors,
-            entity_mask)
+            seq_gold_entity_embs.unsqueeze(2),
+            seq_gold_entity_priors.unsqueeze(2),
+            entity_mask.unsqueeze(2))
 
         return_dict['projected_span_representations'] = projected_span_representations
         return_dict['projected_bert_representations'] = projected_bert_representations
@@ -613,6 +626,7 @@ class EntityLinkingWithCandidateMentions(EntityLinkingBase):
                 candidate_entities: torch.Tensor,
                 candidate_entity_priors: torch.Tensor,
                 candidate_segment_ids: torch.Tensor,
+                seq_gold_entity_starts, seq_gold_entity_ends, seq_gold_entity_embs, seq_gold_entity_priors,
                 **kwargs):
 
         disambiguator_output = self.disambiguator(
@@ -622,6 +636,10 @@ class EntityLinkingWithCandidateMentions(EntityLinkingBase):
             candidate_entities=candidate_entities['ids'],
             candidate_entity_priors=candidate_entity_priors,
             candidate_segment_ids=candidate_segment_ids,
+            seq_gold_entity_starts=seq_gold_entity_starts,
+            seq_gold_entity_ends=seq_gold_entity_ends,
+            seq_gold_entity_embs=seq_gold_entity_embs,
+            seq_gold_entity_priors=seq_gold_entity_priors,
             **kwargs
         )
 
@@ -649,7 +667,8 @@ class SolderedKG(Model):
                  span_attention_config: Dict[str, int],
                  should_init_kg_to_bert_inverse: bool = True,
                  freeze: bool = False,
-                 regularizer: RegularizerApplicator = None):
+                 regularizer: RegularizerApplicator = None,
+                 ):
         super().__init__(vocab, regularizer)
 
         self.entity_linker = entity_linker
@@ -731,12 +750,17 @@ class SolderedKG(Model):
                 candidate_entities: torch.Tensor,
                 candidate_entity_priors: torch.Tensor,
                 candidate_segment_ids: torch.Tensor,
+                seq_gold_entity_starts, seq_gold_entity_ends, seq_gold_entity_embs, seq_gold_entity_priors,
                 **kwargs):
 
         linker_output = self.entity_linker(
             contextual_embeddings, tokens_mask,
             candidate_spans, candidate_entities, candidate_entity_priors,
-            candidate_segment_ids, **kwargs)
+            candidate_segment_ids,
+            seq_gold_entity_starts=seq_gold_entity_starts,
+            seq_gold_entity_ends=seq_gold_entity_ends,
+            seq_gold_entity_embs=seq_gold_entity_embs,
+            seq_gold_entity_priors=seq_gold_entity_priors, **kwargs)
 
         # update the span representations with the entity embeddings
         span_representations = linker_output['projected_span_representations']
@@ -749,7 +773,7 @@ class SolderedKG(Model):
         # now run self attention between bert and spans_with_entities
         # to update bert.
         # this is done in projected dimension
-        entity_mask = candidate_spans[:, :, 0] > -1
+        entity_mask = seq_gold_entity_starts >= 0
         span_attention_output = self.span_attention_layer(
             linker_output['projected_bert_representations'],
             spans_with_entities,
@@ -883,7 +907,11 @@ class KnowBert(BertPretrainedMetricsLoss):
         return metrics
 
     def forward(self, tokens=None, segment_ids=None, candidates=None,
-                lm_label_ids=None, next_sentence_label=None, attention_mask=None, **kwargs):
+                lm_label_ids=None, next_sentence_label=None, attention_mask=None,
+                seq_gold_entity_starts=None,
+                seq_gold_entity_ends=None,
+                seq_gold_entity_embs=None,
+                seq_gold_entity_priors=None, **kwargs):
 
         assert all(x in candidates.keys() for x in self.soldered_kgs.keys())
 
@@ -922,6 +950,10 @@ class KnowBert(BertPretrainedMetricsLoss):
                 kg_output = soldered_kg(
                     contextual_embeddings=contextual_embeddings,
                     tokens_mask=mask,
+                    seq_gold_entity_starts=seq_gold_entity_starts,
+                    seq_gold_entity_ends=seq_gold_entity_ends,
+                    seq_gold_entity_embs=seq_gold_entity_embs,
+                    seq_gold_entity_priors=seq_gold_entity_priors,
                     **soldered_kwargs)
                 linking_scores[soldered_kg_key] = kg_output['linking_scores']
                 if 'loss' in kg_output:
