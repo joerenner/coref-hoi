@@ -17,6 +17,7 @@ import conll
 import sys
 import os
 import json
+import pickle
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
                     datefmt='%m/%d/%Y %H:%M:%S',
