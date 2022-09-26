@@ -216,10 +216,8 @@ class Runner:
                 outputs[doc_key] = doc_pred
 
         """
-        with open(f"{self.name_suffix}_{step}_predictions.pkl", 'wb') as f:
+        with open(f"{join(self.config['log_dir'], self.name_suffix)}_predictions.pkl", 'wb') as f:
             pickle.dump(doc_to_prediction, f)
-            
-            
         if output_preds:
             with open("./data/2022_SharedTask_test_512.jsonl", 'r') as f:
                 samples = [json.loads(line) for line in f.readlines()]
