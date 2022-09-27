@@ -156,7 +156,7 @@ class CorefModel(nn.Module):
                     seq_gold_entity_ends.append(current_gold_entity_ends)
                     seq_gold_entity_ids.append(current_gold_entity_ids)
                     seq_gold_entity_priors.append(current_gold_entity_priors)
-                    past_num_words = current_num_words
+                    past_num_words = current_num_words.item()
                 # pad to max_spans per sequence
                 max_spans = max([len(x) for x in seq_gold_entity_starts])
                 for i in range(num_sequences):
